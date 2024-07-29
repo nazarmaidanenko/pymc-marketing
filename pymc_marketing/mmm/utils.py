@@ -1,12 +1,25 @@
+#   Copyright 2024 The PyMC Labs Developers
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
 """Utility functions for the Marketing Mix Modeling module."""
 
-import re
 from collections.abc import Callable
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+import pymc as pm
 import xarray as xr
 from scipy.optimize import curve_fit, minimize_scalar
 
@@ -14,7 +27,7 @@ from pymc_marketing.mmm.transformers import michaelis_menten
 
 
 def generate_fourier_modes(
-    periods: npt.NDArray[np.float_], n_order: int
+    periods: npt.NDArray[np.float64], n_order: int
 ) -> pd.DataFrame:
     """Generate Fourier modes.
 
@@ -213,32 +226,6 @@ def find_sigmoid_inflection_point(
     return x_inflection, y_inflection
 
 
-def standardize_scenarios_dict_keys(d: dict, keywords: list[str]):
-    """
-    Standardize the keys in a dictionary based on a list of keywords.
-
-    This function iterates over the keys in the dictionary and the keywords.
-    If a keyword is found in a key (case-insensitive), the key is replaced with the keyword.
-
-    Parameters
-    ----------
-    d : dict
-        The dictionary whose keys are to be standardized.
-    keywords : list
-        The list of keywords to standardize the keys to.
-
-    Returns
-    -------
-    None
-        The function modifies the given dictionary in-place and doesn't return any object.
-    """
-    for keyword in keywords:
-        for key in list(d.keys()):
-            if re.search(keyword, key, re.IGNORECASE):
-                d[keyword] = d.pop(key)
-                break
-
-
 def apply_sklearn_transformer_across_dim(
     data: xr.DataArray,
     func: Callable[[np.ndarray], np.ndarray],
@@ -278,6 +265,26 @@ def apply_sklearn_transformer_across_dim(
     data.attrs = attrs
 
     return data
+
+
+def transform_1d_array(
+    transform: Callable[[pd.Series | np.ndarray], np.ndarray], y: pd.Series | np.ndarray
+) -> np.ndarray:
+    """Transform a 1D array using a scikit-learn transformer.
+
+    Parameters
+    ----------
+    transform : scikit-learn transformer
+        The transformer to apply to the data.
+    y : np.ndarray
+        The data to transform.
+
+    Returns
+    -------
+    np.ndarray
+        The transformed data.
+    """
+    return transform(np.array(y)[:, None]).flatten()
 
 
 def sigmoid_saturation(
@@ -387,3 +394,32 @@ def create_new_spend_data(
             spend,
         ]
     )
+
+
+def _get_distribution_from_dict(dist: dict) -> Callable:
+    """
+    Retrieve a PyMC distribution callable based on the provided dictionary.
+
+    Parameters
+    ----------
+    dist : Dict
+        A dictionary containing the key 'dist' which should correspond to the
+        name of a PyMC distribution.
+
+    Returns
+    -------
+    Callable
+        A PyMC distribution callable that can be used to instantiate a random
+        variable.
+
+    Raises
+    ------
+    ValueError
+        If the specified distribution name in the dictionary does not correspond
+        to any distribution in PyMC.
+    """
+    try:
+        prior_distribution = getattr(pm, dist["dist"])
+    except AttributeError:
+        raise ValueError(f"Distribution {dist['dist']} does not exist in PyMC")
+    return prior_distribution
